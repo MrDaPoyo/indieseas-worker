@@ -1,4 +1,10 @@
 import * as cheerio from "cheerio";
+import imageSize from "image-size";
+
+function getImageSize(buffer) {
+	const metadata = imageSize(buffer);
+	return { width: metadata.width || 0, height: metadata.height || 0 };
+}
 
 export default {
 	async fetch(request, env, ctx) {
@@ -10,12 +16,15 @@ export default {
 				status: 401,
 			});
 		}
-
 		let name = url.searchParams.get("path");
 		if (!name) return new Response("No URL to scrape detected.");
-		if (!name.startsWith("http://") || !name.startsWith("https://"))
+
+		if (name.startsWith("http://") || name.startsWith("https://")) {
+			name = new URL(name).href;
+		} else {
 			name = `https://${name}`;
-		const answer = await fetch(new URL(name).href);
+		}
+		const answer = await fetch(name);
 
 		if (!answer)
 			return new Response(`Failed to fetch: ${name}`, { status: 500 });
@@ -26,14 +35,17 @@ export default {
 
 		const $ = cheerio.load(await answer.text());
 		for (let img of $("img").toArray()) {
-	  if (!img) continue;
-	  const $img = $(img);
-	  const imgSrc = $img.attr('src');
-	  console.log(imgSrc);
+			if (!img) continue;
+			const $img = $(img);
+			const imgSrc = $img.attr("src");
 			if (!imgSrc) continue;
 
 			var src = imgSrc;
-			if (src && !src.startsWith("http")) {
+			if (
+				src &&
+				!src.startsWith("http://") &&
+				!src.startsWith("https://")
+			) {
 				src = new URL(src, name).href;
 			}
 
@@ -59,23 +71,54 @@ export default {
 				}
 			}
 
-			if (!src) continue;
-      foundButtons[src] = {
-        src: src,
-        links_to: links_to,
-      };
+			const imgAlt = $img.attr("alt");
+			const imgTitle = $img.attr("title");
+
+			// Fetch the image
+			let button = await fetch(src);
+
+			if (!button.ok) {
+				console.log(
+					"Failed to fetch image:",
+					src,
+					"Status:",
+					button.status
+				);
+				continue;
+			} else {
+				let arrayBuffer;
+				try {
+					arrayBuffer = await button.arrayBuffer();
+				} catch (error) {}
+
+				if (!arrayBuffer || arrayBuffer.byteLength == 0) {
+					console.log("Empty image buffer for:", src);
+					continue;
+				}
+
+				let uintArray = new Uint8Array(arrayBuffer);
+
+				foundButtons[src] = {
+					src: src,
+					links_to: links_to,
+					alt: imgAlt,
+					title: imgTitle,
+					size: getImageSize(uintArray),
+					buffer: uintArray,
+				};
+			}
 		}
 
-    if (Object.keys(foundButtons).length === 0) {
-      return new Response("No buttons found", { status: 404 });
-    }
+		if (Object.keys(foundButtons).length === 0) {
+			return new Response("No buttons found", { status: 404 });
+		}
 
 		return new Response(JSON.stringify(foundButtons) || {}, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
-    });
+			status: 200,
+			headers: {
+				"Content-Type": "application/json",
+				"Access-Control-Allow-Origin": "*",
+			},
+		});
 	},
 };
