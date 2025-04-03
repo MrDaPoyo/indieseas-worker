@@ -141,6 +141,8 @@ export default {
 			JSON.stringify({
 				buttons: foundButtons,
 				title: root.querySelector("title")?.text,
+				description: root.querySelector("meta[name='description']")?.getAttribute("content"),
+				keywords: root.querySelector("meta[name='keywords']")?.getAttribute("content"),
 				meta: root.querySelector("meta")?.getAttribute("content"),
 				rawText: allText,
 				links: root.querySelectorAll("a").map(function (a) {
