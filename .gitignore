@@ -2,3 +2,4 @@ wrangler.*
 node_modules/.cache/wrangler/*
 node_modules/.mf/*
 node_modules/.cache/*
+.wrangler

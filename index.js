@@ -1,10 +1,4 @@
-import imageSize from "image-size";
 import { parse } from "node-html-parser";
-
-function getImageSize(buffer) {
-	const metadata = imageSize(buffer);
-	return { width: metadata.width || 0, height: metadata.height || 0 };
-}
 
 export default {
 	async fetch(request, env, ctx) {
@@ -45,6 +39,12 @@ export default {
 				textarea: false,
 				document: false,
 			},
+			comment: false,
+			ignoreWhitespace: true,
+			normalizeWhitespace: true,
+			trimWhitespace: true,
+			upperCaseTagName: false,
+			lowerCaseTagName: false,
 		});
 		const images = root.querySelectorAll("img");
 		for (const img of images) {
@@ -86,63 +86,37 @@ export default {
 			const imgAlt = img.getAttribute("alt");
 			const imgTitle = img.getAttribute("title");
 
-			let button;
-			try {
-				button = await fetch(src);
-			} catch (error) {
-				console.log("Failed to fetch image:", src, "Error:", error);
-				continue;
+			if (!foundButtons.buttons) {
+				foundButtons.buttons = [];
 			}
-
-			if (!button.ok) {
-				console.log(
-					"Failed to fetch image:",
-					src,
-					"Status:",
-					button.status
-				);
-				continue;
-			} else {
-				let arrayBuffer;
-				try {
-					arrayBuffer = await button.arrayBuffer();
-				} catch (error) {}
-
-				if (!arrayBuffer || arrayBuffer.byteLength == 0) {
-					console.log("Empty image buffer for:", src);
-					continue;
-				}
-
-				let uintArray = new Uint8Array(arrayBuffer);
-
-				foundButtons[src] = {
-					src: src,
-					links_to: links_to,
-					alt: imgAlt,
-					title: imgTitle,
-					size: getImageSize(uintArray),
-					buffer: uintArray,
-				};
-			}
-		}
-
-		if (Object.keys(foundButtons).length === 0) {
-			return new Response("No buttons found", { status: 404 });
+			foundButtons.buttons.push({
+				src: src,
+				links_to: links_to,
+				alt: imgAlt,
+				title: imgTitle,
+			});
 		}
 
 		let allText = root.text || "";
-		allText = allText.replace(/\s+/g, " ").trim(); // Remove extra spaces
 		allText = allText.replace(/\n/g, " "); // Remove newlines
 		allText = allText.replace(/\r/g, " "); // Remove carriage returns
+		allText = allText.replace(/<\/?[^>]+(>|$)/g, " $& "); // Add spaces around HTML tags
 		allText = allText.replace(/ +/g, " "); // Remove multiple spaces
-		allText = allText.replace(/<[^>]+>/g, "").trim().toLowerCase(); // Remove HTML tags, trim and lowercase cuz why not
+		allText = allText
+			.replace(/<[^>]+>/g, " ")
+			.trim()
+			.toLowerCase(); // Remove HTML tags with space, trim and lowercase
 
 		return new Response(
 			JSON.stringify({
-				buttons: foundButtons,
+				buttons: foundButtons.buttons || [],
 				title: root.querySelector("title")?.text,
-				description: root.querySelector("meta[name='description']")?.getAttribute("content"),
-				keywords: root.querySelector("meta[name='keywords']")?.getAttribute("content"),
+				description: root
+					.querySelector("meta[name='description']")
+					?.getAttribute("content"),
+				keywords: root
+					.querySelector("meta[name='keywords']")
+					?.getAttribute("content"),
 				meta: root.querySelector("meta")?.getAttribute("content"),
 				rawText: allText,
 				links: root.querySelectorAll("a").map(function (a) {
